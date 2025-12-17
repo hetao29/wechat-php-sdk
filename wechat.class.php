@@ -106,6 +106,8 @@ class Wechat
 	const TEMPLATE_SET_INDUSTRY_URL = '/template/api_set_industry?';
 	const TEMPLATE_ADD_TPL_URL = '/template/api_add_template?';
 	const TEMPLATE_SEND_URL = '/message/template/send?';
+	const MINIPROGRAM_TEMPLATE_SEND_URL = '/message/wxopen/template/send?';
+	const MINIPROGRAM_SUBSCRIBE_SEND_URL = '/message/subscribe/send?';
 	const MASS_SEND_GROUP_URL = '/message/mass/sendall?';
 	const MASS_DELETE_URL = '/message/mass/delete?';
 	const MASS_PREVIEW_URL = '/message/mass/preview?';
@@ -242,6 +244,7 @@ class Wechat
 	public function __construct($options)
 	{
 		$this->token = isset($options['token'])?$options['token']:'';
+		$this->access_token = isset($options['access_token'])?$options['access_token']:'';
 		$this->encodingAesKey = isset($options['encodingaeskey'])?$options['encodingaeskey']:'';
 		$this->appid = isset($options['appid'])?$options['appid']:'';
 		$this->appsecret = isset($options['appsecret'])?$options['appsecret']:'';
@@ -271,6 +274,15 @@ class Wechat
 			return false;
 		}
 	}
+	/**
+	 * Xml to Array
+	 */
+	private function xml2array($str)
+	{
+		$xml= simplexml_load_string($str, 'SimpleXMLElement', LIBXML_NOCDATA);
+		$json = json_encode($xml);
+		return json_decode($json,TRUE);
+	}
 
 	/**
 	 * For weixin server validation
@@ -281,7 +293,7 @@ class Wechat
         $encryptStr="";
         if ($_SERVER['REQUEST_METHOD'] == "POST") {
             $postStr = file_get_contents("php://input");
-            $array = (array)simplexml_load_string($postStr, 'SimpleXMLElement', LIBXML_NOCDATA);
+			$array = $this->xml2array($postStr);
             $this->encrypt_type = isset($_GET["encrypt_type"]) ? $_GET["encrypt_type"]: '';
             if ($this->encrypt_type == 'aes') { //aes加密
                 $this->log($postStr);
@@ -374,7 +386,7 @@ class Wechat
 		//兼顾使用明文又不想调用valid()方法的情况
 		$this->log($postStr);
 		if (!empty($postStr)) {
-			$this->_receive = (array)simplexml_load_string($postStr, 'SimpleXMLElement', LIBXML_NOCDATA);
+			$this->_receive = $this->xml2array($postStr);
 		}
 		return $this;
 	}
@@ -1211,6 +1223,9 @@ class Wechat
 		if (!$appid || !$appsecret) {
 			$appid = $this->appid;
 			$appsecret = $this->appsecret;
+		}
+		if (!$token && $this->access_token) {
+		    return $this->access_token;
 		}
 		if ($token) { //手动指定token，优先使用
 		    $this->access_token=$token;
@@ -2675,6 +2690,34 @@ class Wechat
 	public function sendTemplateMessage($data){
 		if (!$this->access_token && !$this->checkAuth()) return false;
 		$result = $this->http_post(self::API_URL_PREFIX.self::TEMPLATE_SEND_URL.'access_token='.$this->access_token,self::json_encode($data));
+		if($result){
+			$json = json_decode($result,true);
+			if (!$json || !empty($json['errcode'])) {
+				$this->errCode = $json['errcode'];
+				$this->errMsg = $json['errmsg'];
+				return false;
+			}
+			return $json;
+		}
+		return false;
+	}
+	public function sendMiniProgramTemplateMessage($data){
+		if (!$this->access_token && !$this->checkAuth()) return false;
+		$result = $this->http_post(self::API_URL_PREFIX.self::MINIPROGRAM_TEMPLATE_SEND_URL.'access_token='.$this->access_token,self::json_encode($data));
+		if($result){
+			$json = json_decode($result,true);
+			if (!$json || !empty($json['errcode'])) {
+				$this->errCode = $json['errcode'];
+				$this->errMsg = $json['errmsg'];
+				return false;
+			}
+			return $json;
+		}
+		return false;
+	}
+	public function sendMiniProgramSubscribeMessage($data){
+		if (!$this->access_token && !$this->checkAuth()) return false;
+		$result = $this->http_post(self::API_URL_PREFIX.self::MINIPROGRAM_SUBSCRIBE_SEND_URL.'access_token='.$this->access_token,self::json_encode($data));
 		if($result){
 			$json = json_decode($result,true);
 			if (!$json || !empty($json['errcode'])) {
@@ -4698,6 +4741,7 @@ class ErrorCode
     public static $EncodeBase64Error = 40009;
     public static $DecodeBase64Error = 40010;
     public static $GenReturnXmlError = 40011;
+	public static $IllegalIv = 40012;
     public static $errCode=array(
             '0' => '处理成功',
             '40001' => '校验签名失败',
@@ -4710,7 +4754,8 @@ class ErrorCode
             '40008' => '公众平台发送的xml不合法',
             '40009' => 'Base64编码失败',
             '40010' => 'Base64解码失败',
-            '40011' => '公众帐号生成回包xml失败'
+            '40011' => '公众帐号生成回包xml失败',
+            '40012' => 'IV不正确'
     );
     public static function getErrText($err) {
         if (isset(self::$errCode[$err])) {
